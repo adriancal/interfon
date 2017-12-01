@@ -5,13 +5,12 @@ require_once __DIR__ . '/vendor/autoload.php';
 use Phpml\Classification\NaiveBayes;
 use Symfony\Component\Yaml\Yaml;
 
-saveCurrencyHistoricData();
+$currencies = ['BTC', 'ETH', 'BCH', 'XRP', 'DASH', 'LTC', 'BTG', 'ADA', 'ETC', 'XMR', 'NEO', 'XEM', 'EOS', 'XLM', 'BCC', 'QTUM', 'ZEC', 'OMG', 'LSK'];
 
-//echo ($classifier->predict([1, 1, 0]));
+mainAction();
 
 function saveCurrencyHistoricData() {
-//    $currencies = ['BTC', 'ETH', 'BCH', 'XRP', 'DASH', 'LTC', 'BTG', 'MIOTA', 'ADA', 'ETC', 'XMR', 'NEO', 'XEM', 'EOS', 'XLM'];
-    $currencies = ['IOTA', 'BCC', 'QTUM', 'ZEC', 'OMG', 'LSK'];
+    global $currencies;
     $preparedData = [];
     foreach ($currencies as $currency) {
         $apiData = json_decode(file_get_contents("https://min-api.cryptocompare.com/data/histoday?fsym=$currency&tsym=USD&limit=365"), true);
@@ -19,34 +18,100 @@ function saveCurrencyHistoricData() {
         foreach ($apiData['Data'] as $info) {
             $preparedData[$currency][date('d_m_Y', $info['time'])] = $info['close'];
         }
-        
+
         $yaml = Yaml::dump([$currency => $preparedData[$currency]]);
         file_put_contents("samples/$currency.yaml", $yaml);
     }
 }
 
+function getCurrencyValues($limit) {
+    global $currencies;
+
+    $currencyValues = [];
+    foreach ($currencies as $currency) {
+        $yamlValues = Yaml::parseFile("samples/$currency.yaml")[$currency];
+        $currencyValues[$currency] = array_splice($yamlValues, -$limit);
+    }
+
+    return $currencyValues;
+}
+
 function mainAction() {
-    /*
-     * Data de 26:
-     * Moneda1: +10   |
-     * Moneda2: +1    | => moneda de interes => a+5
-     * Moneda3: -1    |
-     */
+    $allCurrencyValues = getCurrencyValues(10);
+    $currencyToPredict = 'ADA';
+    $predictionValues[$currencyToPredict] = $allCurrencyValues[$currencyToPredict];
+    unset($allCurrencyValues[$currencyToPredict]);
 
-    /*
-     * Data de 27:
-     * Moneda1: +10   |
-     * Moneda2: +5    | => moneda de interes => a-5
-     * Moneda3: -1    |
-     */
-    $samples = [
-        [10, 1, -1],
-        [10, 5, -1],
-    ];
+    $samples = $labels = [];
+    $isFirst = true;
+    foreach ($predictionValues[$currencyToPredict] as $currentDate => $value) {
+        if ($isFirst) {
+            $isFirst = false;
+            continue;
+        }
 
+        $sample = [];
+        $prevDateTime = (DateTime::createFromFormat('d_m_Y', $currentDate));
+        $prevDateTime->modify('-1 day');
+        $prevDate = $prevDateTime->format('d_m_Y');
+        $nextDateTime = (DateTime::createFromFormat('d_m_Y', $currentDate));
+        $nextDateTime->modify('+1 day');
+        $nextDate = $nextDateTime->format('d_m_Y');
+
+        $currentValue = $predictionValues[$currencyToPredict][$currentDate];
+
+        if (isset($predictionValues[$currencyToPredict][$nextDate])) {
+            $nextValue = $predictionValues[$currencyToPredict][$nextDate];
+            $evolution = number_format(((1 - ($currentValue / $nextValue)) * 100), 1);
+            $labels[$nextDate] = getLabelForEvolution($evolution);
+        }
+
+        foreach ($allCurrencyValues as $currencyValues) {
+            $day1Value = $currencyValues[$prevDate];
+            $day2Value = $currencyValues[$currentDate];
+
+            if (empty($day1Value) || empty($day2Value)) {
+                throw new Exception('Nu este valoare');
+            }
+
+            $sample[] = number_format(((1 - ($day1Value / $day2Value)) * 100), 1);
+        }
+        $samples[$currentDate] = $sample;
+    }
+
+    $valuesToPredict = array_pop($samples);
     $samples = array_values($samples);
-    $labels = ['a+5', 'a-5'];
+    $labels = array_values($labels);
 
     $classifier = new NaiveBayes();
     $classifier->train($samples, $labels);
+
+    $correct = $incorrect = 0;
+    foreach ($samples as $key => $sample) {
+        $prediction = ($classifier->predict($sample));
+        $actual = $labels[$key];
+        
+        if ($prediction == $actual) {
+            $correct += 1;
+        } else {
+            $incorrect +=1;
+        }
+    }
+    var_dump($correct, $incorrect);
+}
+
+function getLabelForEvolution($evolution) {
+    if ($evolution < -10) {
+        return '-a2';
+    }
+
+    if ($evolution <= 0) {
+        return '-a1';
+    }
+
+    if ($evolution >= 10) {
+        return 'a2';
+    }
+
+    return 'a1';
 }
