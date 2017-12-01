@@ -7,7 +7,7 @@ use Symfony\Component\Yaml\Yaml;
 
 $currencies = ['BTC', 'ETH', 'BCH', 'XRP', 'DASH', 'LTC', 'BTG', 'ADA', 'ETC', 'XMR', 'NEO', 'XEM', 'EOS', 'XLM', 'BCC', 'QTUM', 'ZEC', 'OMG', 'LSK'];
 
-mainAction();
+mainAction($_GET['l'], $_GET['c']);
 
 function saveCurrencyHistoricData() {
     global $currencies;
@@ -24,21 +24,32 @@ function saveCurrencyHistoricData() {
     }
 }
 
-function getCurrencyValues($limit) {
+function getCurrencyValues($limit, $currencyToPredict) {
     global $currencies;
 
     $currencyValues = [];
     foreach ($currencies as $currency) {
         $yamlValues = Yaml::parseFile("samples/$currency.yaml")[$currency];
-        $currencyValues[$currency] = array_splice($yamlValues, -$limit);
+        $splicedValues = array_splice($yamlValues, -$limit);
+
+        if (in_array(0, $splicedValues, true)) {
+            if ($currency == $currencyToPredict) {
+                var_dump('Currency to predict is only ', $splicedValues);
+                die;
+            }
+            continue;
+        }
+        $currencyValues[$currency] = $splicedValues;
     }
 
     return $currencyValues;
 }
 
-function mainAction() {
-    $allCurrencyValues = getCurrencyValues(10);
-    $currencyToPredict = 'ADA';
+function mainAction($limit, $currencyToPredict) {
+    $allCurrencyValues = getCurrencyValues($limit, $currencyToPredict);
+
+    var_dump('Without full values -> ' . (19 - count($allCurrencyValues)));
+
     $predictionValues[$currencyToPredict] = $allCurrencyValues[$currencyToPredict];
     unset($allCurrencyValues[$currencyToPredict]);
 
@@ -74,7 +85,8 @@ function mainAction() {
                 throw new Exception('Nu este valoare');
             }
 
-            $sample[] = number_format(((1 - ($day1Value / $day2Value)) * 100), 1);
+            $sampleEvolution = number_format(((1 - ($day1Value / $day2Value)) * 100), 1);
+            $sample[] = $sampleEvolution;
         }
         $samples[$currentDate] = $sample;
     }
@@ -90,13 +102,15 @@ function mainAction() {
     foreach ($samples as $key => $sample) {
         $prediction = ($classifier->predict($sample));
         $actual = $labels[$key];
-        
+
         if ($prediction == $actual) {
             $correct += 1;
         } else {
+//            var_dump ('a ' . $actual . ' | p ' . $prediction);
             $incorrect +=1;
         }
     }
+
     var_dump($correct, $incorrect);
 }
 
@@ -114,4 +128,28 @@ function getLabelForEvolution($evolution) {
     }
 
     return 'a1';
+}
+
+function getSampleForEvolution($evolution) {
+    if ($evolution <= -10) {
+        return -3;
+    }
+
+    if ($evolution <= -5) {
+        return -2;
+    }
+
+    if ($evolution <= 0) {
+        return -1;
+    }
+
+    if ($evolution >= 10) {
+        return 3;
+    }
+
+    if ($evolution >=5 ) {
+        return 2;
+    }
+
+    return 1;
 }
