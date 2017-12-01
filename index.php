@@ -3,23 +3,26 @@
 require_once __DIR__ . '/vendor/autoload.php';
 
 use Phpml\Classification\NaiveBayes;
+use Symfony\Component\Yaml\Yaml;
 
-getCurrencySamples();
+saveCurrencyHistoricData();
 
 //echo ($classifier->predict([1, 1, 0]));
 
-function getCurrencySamples() {
-    $currencies = ['BTC', 'ETH', 'BCH', 'XRP'];
+function saveCurrencyHistoricData() {
+//    $currencies = ['BTC', 'ETH', 'BCH', 'XRP', 'DASH', 'LTC', 'BTG', 'MIOTA', 'ADA', 'ETC', 'XMR', 'NEO', 'XEM', 'EOS', 'XLM'];
+    $currencies = ['IOTA', 'BCC', 'QTUM', 'ZEC', 'OMG', 'LSK'];
     $preparedData = [];
     foreach ($currencies as $currency) {
-        $apiData = json_decode(file_get_contents("https://min-api.cryptocompare.com/data/histoday?fsym=$currency&tsym=USD&limit=5"), true);
+        $apiData = json_decode(file_get_contents("https://min-api.cryptocompare.com/data/histoday?fsym=$currency&tsym=USD&limit=365"), true);
 
         foreach ($apiData['Data'] as $info) {
-            $preparedData[$currency][date('d/m/Y', $info['time'])] = $info['close'];
+            $preparedData[$currency][date('d_m_Y', $info['time'])] = $info['close'];
         }
-        krsort($preparedData[$currency]);
+        
+        $yaml = Yaml::dump([$currency => $preparedData[$currency]]);
+        file_put_contents("samples/$currency.yaml", $yaml);
     }
-    var_dump($preparedData);
 }
 
 function mainAction() {
